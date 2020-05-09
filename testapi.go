@@ -11,7 +11,7 @@ import (
 )
 
 type Configuration struct {
-	Token string `yaml: "token"`
+	Token string `yaml: "iextoken"`
 }
 
 type Company struct {
@@ -27,15 +27,15 @@ type Company struct {
 }
 
 type Dividend struct {
-	ExDate      string `json:"exDate"`
-	PaymentDate string `json:"paymentDate"`
-	RecordDate	string `json:"recordDate"`
-	DeclaredDate	string `json:"declaredDate"`
-	Amount	string `json:"amount"`
-	EventType	string `json:"flag"`
-	Currency 	string `json:"currency"`
-	Description string `json:"description"`
-	Frequency	string `json:"frequency"`
+	ExDate       string `json:"exDate"`
+	PaymentDate  string `json:"paymentDate"`
+	RecordDate   string `json:"recordDate"`
+	DeclaredDate string `json:"declaredDate"`
+	Amount       string `json:"amount"`
+	EventType    string `json:"flag"`
+	Currency     string `json:"currency"`
+	Description  string `json:"description"`
+	Frequency    string `json:"frequency"`
 }
 
 func (c *Configuration) getConf() *Configuration {
