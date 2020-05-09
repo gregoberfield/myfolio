@@ -1,17 +1,29 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 )
 
 type Configuration struct {
-	Token string `yaml: "iextoken"`
+	Secrets struct {
+		IEXToken string `yaml:"iextoken"`
+	}
+	Database struct {
+		Host     string `yaml:"host"`
+		Port     int16  `yaml:"port"`
+		User     string `yaml:"user"`
+		Password string `yaml:"pass"`
+		Name     string `yaml:"name"`
+	}
 }
 
 type Company struct {
@@ -38,18 +50,36 @@ type Dividend struct {
 	Frequency    string `json:"frequency"`
 }
 
-func (c *Configuration) getConf() *Configuration {
+func getConf() (*Configuration, error) {
+	c := &Configuration{}
 
-	yamlFile, err := ioutil.ReadFile("config.yaml")
+	//yamlFile, err := ioutil.ReadFile("config.yaml")
+	//if err != nil {
+	//	log.Printf("yamlFile.Get err   #%v ", err)
+	//}
+	//err = yaml.Unmarshal(yamlFile, c)
+	//if err != nil {
+	//	log.Fatalf("Unmarshal: %v", err)
+	//}
+	//log.Println(c.Database.Port)
+	// Open config file
+	file, err := os.Open("config.yaml")
 	if err != nil {
-		log.Printf("yamlFile.Get err   #%v ", err)
+		return nil, err
 	}
-	err = yaml.Unmarshal(yamlFile, c)
-	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
+	defer file.Close()
+
+	// Init new YAML decode
+	d := yaml.NewDecoder(file)
+
+	// Start YAML decoding from file
+	if err := d.Decode(&c); err != nil {
+		return nil, err
 	}
 
-	return c
+	log.Println(c.Secrets.IEXToken)
+	log.Println(c.Database.Host)
+	return c, nil
 }
 
 func iexRequest(uri string, token string) []byte {
@@ -82,18 +112,36 @@ func checkResponse(body []byte) bool {
 }
 
 func main() {
-	var c Configuration
-	c.getConf()
-	fmt.Println(c)
-	body := iexRequest("stock/v/company", c.Token)
+	c, err := getConf()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Config:\n %s", c.Database.Port)
 
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		c.Database.Host, c.Database.Port, c.Database.User, c.Database.Password, c.Database.Name)
+
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Successfully connected!")
+
+	body := iexRequest("stock/v/company", c.Secrets.IEXToken)
 	company := Company{}
 	json.Unmarshal(body, &company)
 	fmt.Printf("%v", string(body))
 	fmt.Println("\n\n-----\n\n")
 	fmt.Println(company.Sector)
 
-	body = iexRequest("stock/v/dividends/next", c.Token)
+	body = iexRequest("stock/v/dividends/next", c.Secrets.IEXToken)
 	dividend := Dividend{}
 	json.Unmarshal(body, &dividend)
 	if !checkResponse(body) {
