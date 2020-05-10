@@ -3,14 +3,16 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	_ "github.com/lib/pq"
+	"github.com/shopspring/decimal"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 )
 
 type Configuration struct {
@@ -53,15 +55,6 @@ type Dividend struct {
 func getConf() (*Configuration, error) {
 	c := &Configuration{}
 
-	//yamlFile, err := ioutil.ReadFile("config.yaml")
-	//if err != nil {
-	//	log.Printf("yamlFile.Get err   #%v ", err)
-	//}
-	//err = yaml.Unmarshal(yamlFile, c)
-	//if err != nil {
-	//	log.Fatalf("Unmarshal: %v", err)
-	//}
-	//log.Println(c.Database.Port)
 	// Open config file
 	file, err := os.Open("config.yaml")
 	if err != nil {
@@ -77,14 +70,11 @@ func getConf() (*Configuration, error) {
 		return nil, err
 	}
 
-	log.Println(c.Secrets.IEXToken)
-	log.Println(c.Database.Host)
 	return c, nil
 }
 
-func iexRequest(uri string, token string) []byte {
+func iexRequest(uri string, ticker string, token string) ([]byte, error) {
 	BASEURL := "https://cloud.iexapis.com/v1/"
-	//TOKEN := "sk_23be4443d656473298137c788414d1cd"
 	req, err := http.NewRequest(http.MethodGet, BASEURL+uri+"?token="+token, nil)
 	if err != nil {
 		panic(err)
@@ -101,7 +91,11 @@ func iexRequest(uri string, token string) []byte {
 		panic(err)
 	}
 
-	return body
+	if resp.StatusCode != 200 {
+		return nil, errors.New(fmt.Sprintf("IEXCloud: Ticker Lookup Failed (%s)", ticker))
+	}
+
+	return body, nil
 }
 
 func checkResponse(body []byte) bool {
@@ -111,12 +105,32 @@ func checkResponse(body []byte) bool {
 	return true
 }
 
+// ParseFlags will create and parse the CLI flags
+// and return the path to be used elsewhere
+func ParseFlags() (string, error) {
+	var ticker string
+
+	// Set up a CLI flag called "-ticker" to allow users
+	// to supply the configuration file
+	flag.StringVar(&ticker, "ticker", "aapl", "ticker to lookup")
+
+	// Actually parse the flags
+	flag.Parse()
+
+	// Return the ticker
+	return ticker, nil
+}
+
 func main() {
 	c, err := getConf()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Config:\n %s", c.Database.Port)
+
+	ticker, err := ParseFlags()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		c.Database.Host, c.Database.Port, c.Database.User, c.Database.Password, c.Database.Name)
@@ -132,26 +146,28 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Successfully connected!")
+	log.Println("Successfully connected to database!")
 
-	body := iexRequest("stock/v/company", c.Secrets.IEXToken)
+	body, err := iexRequest(fmt.Sprintf("stock/%s/company", ticker), ticker, c.Secrets.IEXToken)
 	company := Company{}
 	json.Unmarshal(body, &company)
-	fmt.Printf("%v", string(body))
-	fmt.Println("\n\n-----\n\n")
-	fmt.Println(company.Sector)
+	log.Println(company.Sector)
 
-	body = iexRequest("stock/v/dividends/next", c.Secrets.IEXToken)
+	body, err = iexRequest(fmt.Sprintf("stock/%s/dividends/next", ticker), ticker, c.Secrets.IEXToken)
+	if err != nil {
+		log.Fatal(err)
+	}
 	dividend := Dividend{}
 	json.Unmarshal(body, &dividend)
 	if !checkResponse(body) {
-		fmt.Println("No dividend data received")
+		log.Println("No dividend data received")
 	} else {
-		fmt.Printf("%v", string(body))
-		amount, err := strconv.ParseFloat(dividend.Amount, 32)
+		//amount, err := strconv.ParseFloat(dividend.Amount, 32)
+
+		amount, err := decimal.NewFromString(dividend.Amount)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
-		fmt.Println("\n\n------\n\nDiv amount: $", fmt.Sprintf("%.2f", amount))
+		log.Println(amount.StringFixedBank(2))
 	}
 }
