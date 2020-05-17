@@ -28,6 +28,18 @@ type Configuration struct {
 	}
 }
 
+type Prices struct {
+	Price float64 `json:"price"`
+	Time  int     `json:"time"`
+}
+
+type OHLC struct {
+	O Prices  `json:"open"`
+	C Prices  `json:"close"`
+	H float64 `json:"high"`
+	L float64 `json:"low"`
+}
+
 type Company struct {
 	Symbol      string `json:"symbol"`
 	CompanyName string `json:"companyName"`
@@ -149,6 +161,9 @@ func main() {
 	log.Println("Successfully connected to database!")
 
 	body, err := iexRequest(fmt.Sprintf("stock/%s/company", ticker), ticker, c.Secrets.IEXToken)
+	if err != nil {
+		log.Fatal(err)
+	}
 	company := Company{}
 	json.Unmarshal(body, &company)
 	log.Println(company.Sector)
@@ -170,4 +185,13 @@ func main() {
 		}
 		log.Println(amount.StringFixedBank(2))
 	}
+
+	body, err = iexRequest(fmt.Sprintf("stock/%s/ohlc", ticker), ticker, c.Secrets.IEXToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ohlc := OHLC{}
+	json.Unmarshal(body, &ohlc)
+	closeprice := decimal.NewFromFloat(ohlc.C.Price)
+	log.Println(closeprice.StringFixedBank(2))
 }
